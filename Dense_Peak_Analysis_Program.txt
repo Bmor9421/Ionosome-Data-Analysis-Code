@@ -1,0 +1,238 @@
+#Disclaimer: occasionally, this program may produce some garbage data for a very small amount of peaks. However, this is always
+#easy to pick out, as it will have integration values that are far too big or far too small, or the peak integration will have
+#a different sign than the peak height, which should not be the case. This program automatically weeds out the vast majority
+#of these occurrences, but in the uncommon event it happens to miss something, it is always easy to find and manually remove.
+
+#If you do not already have access to them, the following two libraries will be required for this program to work.
+import pandas as pd
+import numpy as np
+
+def NumericalIntegrateData(data):
+    #Uses Trapezoid method to integrate data.
+    dt = data.Time[1] - data.Time[0]
+    
+    n = len(data)
+    
+    sum = data.Current[0]/2 + data.Current[n-1]/2
+    
+    for n in range(1, n-1):
+        sum += data.Current[n]
+        
+    sum = dt * sum
+    
+    return sum
+
+dd = pd.read_csv("C:\\Users\\Bmor9421\\Documents\\Data Analysis\\Supporting Data\\Data_To_Be_Analyzed.txt")
+#Line above has to be edited for any new data file being analyzed by changing the argument of the above function to the
+#relevant file path.
+
+#Text files read in must be formatted correctly: column names must be Current and Time, and these two names should be
+#separated by a comma and no spaces. There should be no information in the text file preceding the column names.
+
+#If you have problems with putting the file path in above and the program does not recognize the path, it may help to recall
+#that depending on usage, Python can see '\' as an escape character, and therefore wherever your file path includes this
+#character, it may be necessary to add a second one immediately before.
+
+#This next section of code is the main code which acts as the peak finding algorithm. May not be the most concise method, but it
+#works well. It is essentially the same as the "non-dense" version of the code, but a few parameters have been changed that
+#overall make it technically less accurate, but much more suited for programs with an incredibly high peak density, reaching
+#a peak every few milliseconds. Using the "non-dense" version of the code on such data can cause quite a lot of error, hence
+#why this version of the program is specifically designed to deal with such dense data sets.
+
+NOISE_LEVEL_ROUNDED_UP = 8e-12 #This particular value is a measure of the width of the noise at the noisiest part of the data.
+#This value is then rounded up slightly so as to "encapsulate" all of this noise. This is to be used as a filter for what
+#constitutes a peak, and what is simply noise. This will have to be changed for every new data set being analyzed. Finding this
+#value for each data set is best facilitated using advanced graphing software such as Igor Pro.
+
+q = 0
+peakHeight = list(np.zeros(len(dd.Current)))
+baselineAtPeak = list(np.zeros(len(dd.Current)))
+peakTime = list(np.zeros(len(dd.Current)))
+j=52098 #This particular value must always be the value at which the "reverse signal" in the data begins. This will have to be
+#changed for every new data set being analyzed.
+while j<len(dd.Current):
+    k=1
+    tempSum = 0 
+    if j>10 and j<len(dd.Current)-11:
+        if abs(dd.Current[j]) > abs(dd.Current[j-1]) and abs(dd.Current[j]) > abs(dd.Current[j+1]) and abs(dd.Current[j]) > abs(dd.Current[j-2]) and abs(dd.Current[j]) > abs(dd.Current[j+2]) and abs(dd.Current[j]) > abs(dd.Current[j-3]) and abs(dd.Current[j]) > abs(dd.Current[j+3]) and abs(dd.Current[j]) > abs(dd.Current[j-4]) and abs(dd.Current[j]) > abs(dd.Current[j+4]) and abs(dd.Current[j]) > abs(dd.Current[j-5]) and abs(dd.Current[j]) > abs(dd.Current[j+5]):
+            while k<=5:
+                tempSum = tempSum + dd.Current[(j+5)+k] + dd.Current[(j-5)-k]
+                k = k + 1
+            baselineAtPeak[q] = tempSum / 10
+            peakHeight[q] = dd.Current[j] - baselineAtPeak[q]
+            peakTime[q] = float(j)/1000
+            q = q + 1
+    j = j + 1
+
+        
+pd.set_option('display.max_rows', None)
+da=pd.DataFrame({'PeakTime': peakTime, 'PeakHeight': peakHeight, 'BaselineAtPeak': baselineAtPeak})
+
+index = da[abs(da['PeakHeight']) < NOISE_LEVEL_ROUNDED_UP].index
+da.drop(index, inplace=True)
+da.reset_index(drop = True, inplace = True)
+
+#This next section of code determines peak durations. As well, it includes several failsafes which prevent the code from 
+#reaching a possible error depending on the nature of the peak. If a peak would be of the sort that would cause such an error
+#that it causes the program to reach an error, this peak is removed from the data. This does not happen to many peaks overall,
+#so the statistics obtained from this program still remain accurate in the absence of these peaks.
+
+v = 0
+leftLimit = list(np.zeros(len(da.PeakHeight)))
+rightLimit = list(np.zeros(len(da.PeakHeight)))
+peakDuration = list(np.zeros(len(da.PeakHeight)))
+
+TEMP_LEN = len(da.BaselineAtPeak)
+while v < TEMP_LEN:
+    
+    tempBaseLine = da.BaselineAtPeak[v]
+    
+L = int(da.PeakTime[v]*1000)
+    tempL = L
+    if dd.Current[L] >= da.BaselineAtPeak[v]:
+        while dd.Current[L] >= da.BaselineAtPeak[v]:
+            L = L - 1
+            if L == 0:
+                da.drop(v, inplace=True)
+                rightLimit[v]=0
+                leftLimit[v]=0
+                break
+        if L != 0:
+            leftLimit[v] = dd.Time[L]
+            
+    L = tempL
+    if dd.Current[L] < tempBaseLine:
+        while dd.Current[L] <= da.BaselineAtPeak[v]:
+            L = L - 1
+            if L == 0:
+                da.drop(v, inplace=True)
+                rightLimit[v]=0
+                leftLimit[v]=0
+                break
+        if L != 0:
+            leftLimit[v] = dd.Time[L]    
+    
+    
+    R = int(da.PeakTime[v]*1000)
+    tempR = R
+    if dd.Current[R] >= da.BaselineAtPeak[v]:
+        while dd.Current[R] >= da.BaselineAtPeak[v]:
+            R = R + 1
+            if R==len(dd.Current):
+                da.drop(v, inplace=True)
+                rightLimit[v]=0
+                leftLimit[v]=0
+                break
+        if R!=len(dd.Current):
+            rightLimit[v] = dd.Time[R]
+            
+    R = tempR
+    if dd.Current[R] < tempBaseLine:
+        while dd.Current[R] <= da.BaselineAtPeak[v]:
+            R = R + 1
+            if R==len(dd.Current):
+                da.drop(v, inplace=True)
+                rightLimit[v]=0
+                leftLimit[v]=0
+                break
+        if R!=len(dd.Current):
+            rightLimit[v] = dd.Time[R]
+            
+    peakDuration[v] = rightLimit[v] - leftLimit[v]
+    
+    v = v + 1
+
+da.reset_index(drop = True, inplace = True)    
+    
+pd.set_option('display.max_columns', None)
+peakDuration = [i for i in peakDuration if i != 0.0]
+da.insert(3, "PeakDuration", peakDuration, allow_duplicates = False)
+
+leftLimit = [i for i in leftLimit if i != 0.0]
+rightLimit = [i for i in rightLimit if i != 0.0]
+
+da.insert(4, "WherePeakStarts", leftLimit, allow_duplicates = False)
+da.insert(5, "WherePeakEnds", rightLimit, allow_duplicates = False)
+
+#This next section of code calculates peak integrations for each peak. Any code that looks slightly unorthodox here is a perhaps
+#less-than-concise failsafe to keep everything running smoothly.
+
+a = 0
+Integrations = list(np.zeros(len(da.PeakHeight)))
+while a < len(da.PeakHeight):
+    q = int(da.WherePeakStarts[a]*1000)
+    i = 0
+    Current = list(np.zeros(int(da.WherePeakEnds[a]*1000 - da.WherePeakStarts[a]*1000)+2))
+    Time = list(np.zeros(int(da.WherePeakEnds[a]*1000 - da.WherePeakStarts[a]*1000)+2))
+    while q >= int(da.WherePeakStarts[a]*1000) and q <= da.WherePeakEnds[a]*1000:
+        Current[i] = dd.Current[q] - da.BaselineAtPeak[a]
+        Time[i] = q/1000
+        q = q + 1
+        i = i + 1
+    
+    data = pd.DataFrame({'Time': Time, 'Current': Current})
+    if len(data.Time) > 1: 
+        Integrations[a] = NumericalIntegrateData(data)
+    a = a + 1
+
+da.insert(6, 'PeakIntegration', Integrations, allow_duplicates = False)
+
+#This next section of code drops any peaks that are clearly garbage data, which should not be many. Peaks that were far too 
+#small were dropped based on the value for the noise level earlier, and peaks that are far too large or peaks whose integrations
+#are of the wrong sign are dropped here.
+
+#A few change from the "non-dense" version of the code are present here. First, the parameter which determines what constitutes
+#a peak whose integration is too large to be real has been increased, as the peaks in these dense data sets were generally much
+#larger than those in the "non-dense" data sets, and therefore a larger set of peaks could be deemed realistic. As well, there
+#is an extra term for getting rid of peaks which are far too small to be real, as an unfortunate consequence of having data
+#so dense with peaks is that proper statistics for the baseline current are inevitably less accurate, and some values such as
+#peak heights have a slightly increased chance therefore of giving garbage data which may slip through. So this simply provides
+#an extra line of defense against such garbage data in the face of data which is unavoidably harder to work with.
+
+print("Dropping blatantly wrong peaks based on sign discrepancies...")
+i=0
+while i<len(da.PeakHeight):
+    if da.PeakHeight[i]/da.PeakIntegration[i] < 0:
+        da.drop(i, inplace=True)
+        print(i)
+    i = i + 1
+da.reset_index(drop = True, inplace = True)
+da
+    
+print()
+print("Dropping blatantly wrong peaks based on integrations being unreasonably huge...")
+i=0
+while i<len(da.PeakIntegration):
+    if abs(da.PeakIntegration[i]) > 1e-12:
+        da.drop(i, inplace=True)
+    i = i + 1
+da.reset_index(drop = True, inplace = True)
+da
+
+index = da[abs(da['PeakIntegration']) < 7.5e-15].index
+da.drop(index, inplace=True)
+da.reset_index(drop = True, inplace = True)
+
+print()
+#Simply calculates number of positive peaks and number of negative peaks. Might be useful data for some who use this program.
+PosPeaks = 0
+NegPeaks = 0
+for i in da.PeakHeight:
+    if i > 0:
+        PosPeaks = PosPeaks + 1
+    elif i < 0:
+        NegPeaks = NegPeaks + 1
+print("Number of positive peaks:", PosPeaks)
+print("Number of negative peaks:", NegPeaks)
+da
+
+#Keep file location same every time, but change the sheet name to the name of the file that was just analyzed. This keeps
+#all data analysis in one Excel file, and it keeps it obvious which sheet corresponds to which data set. Note that for the
+#following line of code to work, the Excel sheet to which you are outputting your data must already exist. Simply create a blank
+#Excel sheet, name it, and then you will be able to properly use this code.
+
+with pd.ExcelWriter(r'C:\Users\Bmor9421\Documents\Data Analysis\Peak_Data.xlsx', engine='openpyxl', mode='a') as writer: 
+     da.to_excel(writer, sheet_name = 'Data_To_Be_Analyzed', index = False)
+
+#Note: This does not overwrite pre-existing sheets. So be careful about running this program for the same data set twice: there 
+#will as a result be duplicate sheets in Excel.
