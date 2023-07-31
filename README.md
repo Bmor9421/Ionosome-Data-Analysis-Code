@@ -1,6 +1,6 @@
 # Ionosome-Data-Analysis-Code
 
-The code on this page is publicly available. In using this code, please cite the paper "Ionosome single entity electrochemical detection at a micro water/alkylphosphonium ionic liquid interface" from Egbe et al.
+The code on this page is publicly available. In using this code, please cite the paper "Ionosome single entity electrochemical detection at a micro water/alkylphosphonium ionic liquid interface" by Egbe et al. from Journal of Electroanalytical Chemistry.
 
 The uploaded programs here are versions of a peak analysis program made for data sets with a non-constant baseline noise level. While this could presumably be generalized to other cases, this code was especially designed for analyzing data sets which resulted from researching what are believed to be "ionosomes" using methods of electrochemistry.
 
